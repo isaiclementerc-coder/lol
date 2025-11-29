@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editor de Fotos Avanzado - SnappyEdit</title>
+    <!-- Carga de Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Carga de la fuente Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
+    <!-- Carga de Font Awesome para iconos -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    
+    <style>
+        :root {
+            --primary-color: #10b981; /* Esmeralda de Tailwind */
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1f2937; /* Gris oscuro */
+        }
+        #editor-container {
+            display: grid;
+            grid-template-rows: 1fr auto;
+            max-height: 100vh;
+        }
+        #canvas-container {
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 1rem;
+            min-height: 60vh;
+        }
+        #photo-canvas {
+            max-width: 100%;
+            max-height: 100%;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.25);
+            border-radius: 0.5rem;
+            transition: filter 0.3s ease;
+        }
+        .slider-group {
+            padding: 0.5rem 0;
+        }
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.875rem;
+            color: #d1d5db; /* Gris claro */
+            margin-bottom: 0.25rem;
+        }
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 4px;
+            background: #374151; /* Gris medio */
+            border-radius: 2px;
+            cursor: pointer;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--primary-color);
+            cursor: pointer;
+            box-shadow: 0 0 5px rgba(16, 185, 129, 0.5);
+        }
+        .tab-button.active {
+            color: var(--primary-color);
+            border-bottom: 2px solid var(--primary-color);
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background-color: #2c3e50;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+            max-width: 90%;
+            width: 400px;
+            color: #ecf0f1;
+        }
+
+        /* Estilos específicos para la rejilla de filtros */
+        .filter-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            padding: 1rem;
+        }
+        .filter-card, .vu-card {
+            background-color: #374151;
+            border-radius: 8px;
+            padding: 0.5rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .filter-card:hover, .vu-card:hover, .filter-card.selected, .vu-card.selected {
+            background-color: #4b5563;
+            box-shadow: 0 0 0 2px var(--primary-color);
+        }
+        .filter-preview {
+            width: 100%;
+            height: 60px;
+            background-color: #555;
+            border-radius: 4px;
+            margin-bottom: 0.5rem;
+            background-image: url('https://placehold.co/100x60/374151/ffffff?text=Filtro');
+            background-size: cover;
+            background-position: center;
+        }
+
+        /* Estilos de fuentes retro */
+        @import url('https://fonts.googleapis.com/css2?family=Creepster&family=Monoton&family=Press+Start+2P&family=Bebas+Neue&family=Alfa+Slab+One&family=Rye&family=Chicle&display=swap');
+        .retro-font-1 { font-family: 'Creepster', cursive; }
+        .retro-font-2 { font-family: 'Monoton', cursive; }
+        .retro-font-3 { font-family: 'Press Start 2P', cursive; }
+        .retro-font-4 { font-family: 'Bebas Neue', sans-serif; }
+        .retro-font-5 { font-family: 'Alfa Slab One', cursive; }
+        .retro-font-6 { font-family: 'Rye', cursive; }
+        .retro-font-7 { font-family: 'Chicle', cursive; }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        // IMPORTANTE: Se usan las versiones 11.6.1 para compatibilidad con las funciones de Canvas.
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, getDocs, deleteDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        
+        // --- CONFIGURACIÓN FIREBASE HARDCODEADA POR EL USUARIO (Paso 3 del Tutorial) ---
+        
+        // Usa un ID de aplicación simple. Se usa como ruta en Firestore.
+        const appId = 'SnappyEdit-Prod'; 
+
+        // PEGA AQUÍ TU OBJETO DE CONFIGURACIÓN COPIADO DE FIREBASE
+        const firebaseConfig = {
+            apiKey: "AIzaSyD6BD03N3qN88KJPOQSUan9PbjOD1ukwaI", 
+            authDomain: "orchidea-b7972.firebaseapp.com", 
+            projectId: "orchidea-b7972", 
+            storageBucket: "orchidea-b7972.firebasestorage.app", 
+            messagingSenderId: "882411506656",
+            appId: "1:882411506656:web:59d1fe5b87d82dfaa4b985"
+        };
+        
+        // Esto se mantiene en null para iniciar sesión anónimamente
+        const initialAuthToken = null; 
+        
+        // --- FIN DE LA CONFIGURACIÓN HARDCODEADA ---
+
+        let app, db, auth, userId;
+        setLogLevel('error'); // Usar 'Debug' si se necesita más detalle
+
+        window.firebaseReady = false;
+        window.db = null;
+
+        // Función de inicialización de Firebase
+        async function initializeFirebase() {
+            if (!firebaseConfig) {
+                console.error("Firebase config is missing.");
+                return;
+            }
+            try {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                window.db = db;
+
+                // Autenticación con Custom Token o Anónima
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                // Listener de estado de autenticación
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        console.log("Usuario autenticado. UID:", userId);
+                        window.userId = userId;
+                        window.firebaseReady = true;
+                        document.getElementById('user-id-display').textContent = `ID de Usuario: ${userId}`;
+                        // Cargar presets después de la autenticación
+                        if(window.loadPresetsFromFirestore) window.loadPresetsFromFirestore();
+                    } else {
+                        console.log("Usuario no autenticado o cerrado sesión.");
+                    }
+                });
+            } catch (error) {
+                console.error("Error al inicializar Firebase:", error);
+                document.getElementById('user-id-display').textContent = `Error de autenticación: ${error.message}`;
+            }
+        }
+
+        initializeFirebase();
+
+        // Funciones de Firestore para Presets
+        const PRESETS_COLLECTION = 'photo_editor_presets';
+
+        window.savePresetToFirestore = async (presetName, settings) => {
+            if (!window.firebaseReady || !window.userId) {
+                showToast('Error: Firebase no está listo.', 'error');
+                return;
+            }
+            try {
+                const docRef = doc(db, `artifacts/${appId}/users/${userId}/${PRESETS_COLLECTION}`, presetName.replace(/\s+/g, '_'));
+                await setDoc(docRef, settings);
+                showToast(`Preset "${presetName}" guardado con éxito!`, 'success');
+                window.loadPresetsFromFirestore(); // Recargar la lista
+            } catch (e) {
+                console.error("Error al guardar el preset:", e);
+                showToast('Error al guardar el preset.', 'error');
+            }
+        };
+
+        window.loadPresetsFromFirestore = async () => {
+            if (!window.firebaseReady || !window.userId) return;
+            try {
+                const presetsRef = collection(db, `artifacts/${appId}/users/${userId}/${PRESETS_COLLECTION}`);
+                const q = query(presetsRef);
+                const querySnapshot = await getDocs(q);
+                
+                const presets = [];
+                querySnapshot.forEach((doc) => {
+                    presets.push({ id: doc.id, name: doc.id.replace(/_/g, ' '), settings: doc.data() });
+                });
+                
+                // Actualizar la lista en la UI
+                window.updatePresetsList(presets);
+
+            } catch (e) {
+                console.error("Error al cargar los presets:", e);
+                showToast('Error al cargar los presets.', 'error');
+            }
+        };
+
+        window.applyPresetFromFirestore = async (presetId) => {
+            if (!window.firebaseReady || !window.userId) return;
+            try {
+                const docRef = doc(db, `artifacts/${appId}/users/${userId}/${PRESETS_COLLECTION}`, presetId);
+                const docSnap = await getDoc(docRef);
+
+                if (docSnap.exists()) {
+                    const settings = docSnap.data();
+                    window.applyPreset(settings);
+                    showToast(`Preset "${docSnap.id.replace(/_/g, ' ')}" aplicado.`, 'success');
+                } else {
+                    showToast('Preset no encontrado.', 'error');
+                }
+            } catch (e) {
+                console.error("Error al aplicar el preset:", e);
+                showToast('Error al aplicar el preset.', 'error');
+            }
+        };
+    </script>
+
+
+    <div id="editor-container" class="w-full h-screen">
+
+        <!-- Encabezado y Barra Superior -->
+        <header class="bg-gray-800 p-2 flex justify-between items-center text-white shadow-lg">
+            <div class="flex items-center space-x-4">
+                <h1 class="text-xl font-bold text-emerald-400">SnappyEdit Pro</h1>
+                <span id="user-id-display" class="text-xs text-gray-400">Cargando usuario...</span>
+            </div>
+            <div class="space-x-4">
+                <button id="upload-button" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 rounded-md transition duration-200">
+                    <i class="fa-solid fa-upload mr-2"></i>Cargar Foto
+                </button>
+                <button id="save-button" class="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded-md transition duration-200" disabled>
+                    <i class="fa-solid fa-save mr-2"></i>Guardar Imagen
+                </button>
+            </div>
+        </header>
+
+        <!-- Contenedor Principal (Canvas y Controles) -->
+        <main class="flex flex-col lg:flex-row flex-grow overflow-hidden">
+            
+            <!-- Área de Vista Previa (Canvas) -->
+            <div id="canvas-container" class="lg:w-3/5 xl:w-4/5 flex-grow bg-gray-900 overflow-auto">
+                <div class="max-w-full max-h-full">
+                    <canvas id="photo-canvas" class="hidden"></canvas>
+                    <div id="upload-placeholder" class="text-center p-8 text-gray-500">
+                        <i class="fa-solid fa-image text-6xl mb-4"></i>
+                        <p class="text-lg">Sube una imagen (JPG, PNG) para empezar a editar.</p>
+                    </div>
+                </div>
+                <input type="file" id="file-input" accept="image/jpeg, image/png, image/raw, .jpg, .png" class="hidden">
+            </div>
+
+            <!-- Panel de Control (Derecha) -->
+            <div class="lg:w-2/5 xl:w-1/5 bg-gray-800 border-l border-gray-700 overflow-y-auto max-h-full flex flex-col">
+                
+                <!-- Navegación de Pestañas -->
+                <div id="tab-navigation" class="flex justify-between border-b border-gray-700 p-2 sticky top-0 bg-gray-800 z-10">
+                    <button class="tab-button active flex-1 text-center py-2 px-1 text-sm transition" data-tab="light">Luz</button>
+                    <button class="tab-button flex-1 text-center py-2 px-1 text-sm transition" data-tab="color">Color</button>
+                    <button class="tab-button flex-1 text-center py-2 px-1 text-sm transition" data-tab="effects">Efectos</button>
+                    <button class="tab-button flex-1 text-center py-2 px-1 text-sm transition" data-tab="filter">Filtros</button>
+                    <button class="tab-button flex-1 text-center py-2 px-1 text-sm transition" data-tab="vu">Vu</button>
+                    <button class="tab-button flex-1 text-center py-2 px-1 text-sm transition" data-tab="transform">Recorte</button>
+                    <button class="tab-button flex-1 text-center py-2 px-1 text-sm transition" data-tab="presets">Presets</button>
+                </div>
+
+                <!-- Contenido de las Pestañas -->
+                <div id="tab-content" class="p-4 text-white flex-grow">
+                    
+                    <!-- Pestaña de Luz -->
+                    <div id="light" class="tab-pane active">
+                        <h3 class="text-lg font-semibold mb-2 text-emerald-400">Luz y Curvas (Simulado)</h3>
+                        <p class="text-xs text-gray-400 mb-4">Ajustes básicos aplicados vía filtros CSS para rendimiento.</p>
+                        <!-- HSL Luminancia (Simulado) -->
+                        <div class="slider-group">
+                            <h4 class="text-md font-medium text-gray-300">HSL Luminancia</h4>
+                            <div class="slider-group"><label class="slider-label">Rojos Lum: <span id="val-hl-r">0</span></label><input type="range" data-setting="lum_r" min="-100" max="100" value="0"></div>
+                            <div class="slider-group"><label class="slider-label">Verdes Lum: <span id="val-hl-g">0</span></label><input type="range" data-setting="lum_g" min="-100" max="100" value="0"></div>
+                            <div class="slider-group"><label class="slider-label">Azules Lum: <span id="val-hl-b">0</span></label><input type="range" data-setting="lum_b" min="-100" max="100" value="0"></div>
+                        </div>
+
+                        <!-- Luz -->
+                        <div class="slider-group border-t border-gray-700 pt-4 mt-4">
+                            <h4 class="text-md font-medium text-gray-300">Luz</h4>
+                            <div class="slider-group"><label class="slider-label">Exposición: <span id="val-exp">0</span></label><input type="range" data-setting="exposure" min="-100" max="100" value="0"></div>
+                            <div class="slider-group"><label class="slider-label">Contraste: <span id="val-cont">0</span></label><input type="range" data-setting="contrast" min="-100" max="100" value="0"></div>
+                            <div class="slider-group"><label class="slider-label">Iluminaciones: <span id="val-high">0</span></label><input type="range" data-setting="highlights" min="-100" max="100" value="0"></div>
+                            <div class="slider-group"><label class="slider-label">Sombras: <span id="val-shad">0</span></label><input type="range" data-setting="shadows" min="-100" max="100" value="0"></div>
+                            <div class="slider-group"><label class="slider-label">Blancos: <span id="val-white">0</span></label><input type="range" data-setting="whites" min="-100" max="100" value="0"></div>
+                            <div class="slider-group"><label class="slider-label">Negros: <span id="val-black">0</span></label><input type="range" data-setting="blacks" min="-100" max="100" value="0"></div>
+                        </div>
+                    </div>
+
+                    <!-- Pestaña de Color -->
+                    <div id="color" class="tab-pane hidden">
+                        <h3 class="text-lg font-semibold mb-2 text-emerald-400">Color y HSL</h3>
+                        <p class="text-xs text-gray-400 mb-4">HSL requiere manipulación compleja de píxeles.</p>
+                        <!-- Color Base -->
+                        <div class="slider-group">
+                            <h4 class="text-md font-medium text-gray-300">Ajustes Base</h4>
+                            <div class="slider-group"><label class="slider-label">Temperatura: <span id="val-temp">0</span></label><input type="range" data-setting="temperature" min="-100" max="100" value="0"></div>
+                            <div class="slider-group"><label class="slider-label">Matiz (Tint): <span id="val-tint">0</span></label><input type="range" data-setting="tint" min="-100" max="100" value="0"></div>
+                            <div class="slider-group"><label class="slider-label">Intensidad (Vibrance): <span id="val-vibrance">0</span></label><input type="range" data-setting="vibrance" min="-100" max="100" value="0"></div>
+                            <div class="slider-group"><label class="slider-label">Saturación: <span id="val-satur">0</span></label><input type="range" data-setting="saturation" min="-100" max="100" value="0"></div>
+                        </div>
+                        
+                        <!-- HSL Mezcla de Colores (Hue, Sat, Lum) -->
+                        <div class="slider-group border-t border-gray-700 pt-4 mt-4">
+                            <h4 class="text-md font-medium text-gray-300">Mezcla de Colores (Rojo)</h4>
+                            <div class="slider-group"><label class="slider-label">Tono (Hue): <span id="val-h_r">0</span></label><input type="range" data-setting="h_r" min="-100" max="100" value="0"></div>
+                            <div class="slider-group"><label class="slider-label">Saturación (Sat): <span id="val-s_r">0</span></label><input type="range" data-setting="s_r" min="-100" max="100" value="0"></div>
+                            <div class="slider-group"><label class="slider-label">Luminancia (Lum): <span id="val-l_r">0</span></label><input type="range" data-setting="l_r" min="-100" max="100" value="0"></div>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-2">Otros colores (Naranja, Amarillo, etc.) usarían un conjunto de controles similar. Por simplicidad, solo se muestra Rojo.</p>
+                    </div>
+
+                    <!-- Pestaña de Efectos -->
+                    <div id="effects" class="tab-pane hidden">
+                        <h3 class="text-lg font-semibold mb-2 text-emerald-400">Efectos Especiales</h3>
+                        <p class="text-xs text-gray-400 mb-4">Algunos efectos se aplican mediante Canvas (Blur, Vignette, Grain).</p>
+                        
+                        <div class="slider-group"><label class="slider-label">Textura: <span id="val-texture">0</span></label><input type="range" data-setting="texture" min="-100" max="100" value="0"></div>
+                        <div class="slider-group"><label class="slider-label">Claridad: <span id="val-clarity">0</span></label><input type="range" data-setting="clarity" min="-100" max="100" value="0"></div>
+                        <div class="slider-group"><label class="slider-label">Borrar Neblina (Dehaze): <span id="val-dehaze">0</span></label><input type="range" data-setting="dehaze" min="-100" max="100" value="0"></div>
+                        <div class="slider-group"><label class="slider-label">Granulado: <span id="val-grain">0</span></label><input type="range" data-setting="grain" min="0" max="100" value="0"></div>
+                        <div class="slider-group"><label class="slider-label">Blur (Desenfoque): <span id="val-blur">0</span></label><input type="range" data-setting="blur" min="0" max="10" value="0"></div>
+                        
+                        <div class="slider-group border-t border-gray-700 pt-4 mt-4">
+                            <h4 class="text-md font-medium text-gray-300">Viñeta</h4>
+                            <div class="slider-group"><label class="slider-label">Cantidad: <span id="val-vignette">0</span></label><input type="range" data-setting="vignette_amount" min="-100" max="100" value="0"></div>
+                            <div class="slider-group"><label class="slider-label">Puntos Medios: <span id="val-vignette_mid">50</span></label><input type="range" data-setting="vignette_midpoint" min="0" max="100" value="50"></div>
+                            <div class="slider-group"><label class="slider-label">Redondez: <span id="val-vignette_round">0</span></label><input type="range" data-setting="vignette_roundness" min="-100" max="100" value="0"></div>
+                        </div>
+
+                        <div class="border-t border-gray-700 pt-4 mt-4">
+                            <h4 class="text-md font-medium text-gray-300">Corrección (Placeholder)</h4>
+                            <button onclick="showMessage('La corrección de objetos requiere IA avanzada. Esta función está en desarrollo.')" class="w-full py-2 mt-2 bg-yellow-600 rounded-md hover:bg-yellow-700">Eliminar Objetos</button>
+                        </div>
+                    </div>
+
+                    <!-- Pestaña de Filtros Análogos -->
+                    <div id="filter" class="tab-pane hidden">
+                        <h3 class="text-lg font-semibold mb-2 text-emerald-400">Filtros Análogos</h3>
+                        <p class="text-xs text-gray-400 mb-4">Imitación de cámaras y película antigua.</p>
+                        <div class="filter-grid" id="analog-filters">
+                            <!-- Los filtros se insertarán aquí por JS -->
+                        </div>
+                    </div>
+
+                    <!-- Pestaña Vu (Rayones, Polvo, Fugas) -->
+                    <div id="vu" class="tab-pane hidden">
+                        <h3 class="text-lg font-semibold mb-2 text-emerald-400">Efectos "Vu" (Vintage)</h3>
+                        <p class="text-xs text-gray-400 mb-4">Añade imperfecciones de película (solo visual).</p>
+                        <div class="filter-grid" id="vu-effects">
+                            <!-- Los efectos Vu se insertarán aquí por JS -->
+                        </div>
+                    </div>
+
+                    <!-- Pestaña de Recorte/Transformación -->
+                    <div id="transform" class="tab-pane hidden">
+                        <h3 class="text-lg font-semibold mb-2 text-emerald-400">Recorte y Transformación</h3>
+                        
+                        <h4 class="text-md font-medium text-gray-300 mt-4">Rotación y Perspectiva</h4>
+                        <div class="flex justify-around space-x-2 mt-2">
+                            <button onclick="rotateImage(90)" class="flex-1 py-2 bg-gray-700 rounded-md hover:bg-gray-600"><i class="fa-solid fa-rotate-right"></i> Rotar 90°</button>
+                            <button onclick="rotateImage(-1)" class="flex-1 py-2 bg-gray-700 rounded-md hover:bg-gray-600"><i class="fa-solid fa-arrows-left-right"></i> Espejo H</button>
+                        </div>
+                        <div class="slider-group mt-4"><label class="slider-label">Rotación de Ángulo: <span id="val-angle">0</span>°</label><input type="range" data-setting="angle" min="-180" max="180" value="0"></div>
+                        <div class="slider-group"><label class="slider-label">Perspectiva H (Sim.): <span id="val-persp_h">0</span></label><input type="range" data-setting="perspective_h" min="-50" max="50" value="0"></div>
+
+                        <h4 class="text-md font-medium text-gray-300 mt-4">Ajuste de Resolución (Aspecto)</h4>
+                        <div class="grid grid-cols-3 gap-2 mt-2">
+                            <button data-ratio="free" class="aspect-button py-2 bg-gray-700 rounded-md hover:bg-gray-600">Libre</button>
+                            <button data-ratio="1/1" class="aspect-button py-2 bg-gray-700 rounded-md hover:bg-gray-600">1:1</button>
+                            <button data-ratio="4/3" class="aspect-button py-2 bg-gray-700 rounded-md hover:bg-gray-600">4:3</button>
+                            <button data-ratio="3/4" class="aspect-button py-2 bg-gray-700 rounded-md hover:bg-gray-600">3:4</button>
+                            <button data-ratio="16/9" class="aspect-button py-2 bg-gray-700 rounded-md hover:bg-gray-600">16:9</button>
+                            <button data-ratio="9/16" class="aspect-button py-2 bg-gray-700 rounded-md hover:bg-gray-600">9:16</button>
+                        </div>
+
+                    </div>
+
+                    <!-- Pestaña de Presets (Ajustes Preestablecidos) -->
+                    <div id="presets" class="tab-pane hidden">
+                        <h3 class="text-lg font-semibold mb-2 text-emerald-400">Presets (Guardados en Firestore)</h3>
+                        
+                        <div class="flex space-x-2 mb-4">
+                            <input type="text" id="preset-name-input" placeholder="Nombre del Preset" class="flex-grow p-2 rounded-md bg-gray-700 text-white placeholder-gray-400 text-sm">
+                            <button id="save-preset-button" class="py-2 px-4 bg-purple-600 rounded-md hover:bg-purple-700 transition">Guardar</button>
+                        </div>
+
+                        <h4 class="text-md font-medium text-gray-300 mb-2">Presets Guardados</h4>
+                        <ul id="presets-list" class="space-y-2">
+                            <li class="text-gray-400 text-sm">Cargando presets...</li>
+                        </ul>
+                    </div>
+
+                    <!-- Apartado de Máscaras y Texto (Placeholder) -->
+                    <div class="border-t border-gray-700 pt-4 mt-4">
+                        <h4 class="text-md font-medium text-gray-300">Máscaras (Localizadas)</h4>
+                        <button onclick="showMessage('Las máscaras requieren segmentación por IA. Esta función es un placeholder.')" class="w-full py-2 mt-2 bg-red-600 rounded-md hover:bg-red-700">Editar Máscaras</button>
+
+                        <h4 class="text-md font-medium text-gray-300 mt-4">Texto y Superposición</h4>
+                        <button id="text-overlay-button" class="w-full py-2 mt-2 bg-indigo-600 rounded-md hover:bg-indigo-700">Añadir Texto/Imágen</button>
+                    </div>
+
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal para Mensajes/Alertas (Reemplazo de alert()) -->
+    <div id="message-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h3 id="modal-title" class="text-xl font-bold mb-4">Alerta</h3>
+            <p id="modal-message" class="mb-6"></p>
+            <div class="flex justify-end">
+                <button onclick="closeMessage()" class="px-4 py-2 bg-emerald-600 rounded-md hover:bg-emerald-700">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Opciones de Guardado -->
+    <div id="save-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h3 class="text-xl font-bold mb-4">Opciones de Guardado</h3>
+            <p class="mb-4">Selecciona el formato de archivo:</p>
+            <div class="flex space-x-4">
+                <button onclick="saveImage('jpeg')" class="flex-1 py-3 bg-yellow-600 hover:bg-yellow-700 rounded-md">JPG</button>
+                <button onclick="saveImage('png')" class="flex-1 py-3 bg-green-600 hover:bg-green-700 rounded-md">PNG</button>
+                <button onclick="saveImage('raw-sim')" class="flex-1 py-3 bg-red-600 hover:bg-red-700 rounded-md">RAW (Simulado)</button>
+            </div>
+            <p class="text-xs text-gray-400 mt-4">La opción RAW es simulada. Los navegadores solo pueden guardar la imagen procesada en JPG/PNG.</p>
+            <div class="flex justify-end mt-4">
+                <button onclick="closeSaveModal()" class="px-4 py-2 bg-gray-700 rounded-md hover:bg-gray-600">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast de Notificación -->
+    <div id="toast-notification" class="fixed bottom-4 right-4 p-3 rounded-md shadow-lg text-white transition-opacity duration-300 hidden z-50"></div>
+
+
+<script>
+    // --- Variables Globales del Editor ---
+    const canvas = document.getElementById('photo-canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const img = new Image();
+    let originalImageData = null;
+    let currentImage = new Image();
+    let currentSettings = {};
+    let isImageLoaded = false;
+    let rotationAngle = 0;
+    
+    // Configuración inicial de ajustes
+    const initialSettings = {
+        // HSL Luminance (Simulado)
+        lum_r: 0, lum_g: 0, lum_b: 0,
+        // Luz
+        exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0,
+        // Color
+        temperature: 0, tint: 0, vibrance: 0, saturation: 0,
+        // HSL Mezcla (Rojo, como ejemplo)
+        h_r: 0, s_r: 0, l_r: 0,
+        // Efectos
+        texture: 0, clarity: 0, dehaze: 0, grain: 0, blur: 0,
+        // Viñeta
+        vignette_amount: 0, vignette_midpoint: 50, vignette_roundness: 0,
+        // Transformación
+        angle: 0, perspective_h: 0,
+        // Filtro y Vu
+        active_filter: 'None',
+        active_vu: 'None'
+    };
+    
+    // Presets de Filtros Análogos (simulados con ajustes CSS/Canvas)
+    const ANALOG_FILTERS = [
+        { name: 'None', settings: {} },
+        { name: 'Fuji Velvia', settings: { saturation: 30, contrast: 15, temperature: 10 } },
+        { name: 'Kodak Portra', settings: { saturation: -10, contrast: 5, highlights: 15, tint: 5 } },
+        { name: 'Ilford HP5', settings: { saturation: -100, contrast: 20, blacks: 20 } },
+        { name: 'Ektachrome', settings: { saturation: 25, contrast: 5, temperature: -10 } },
+        { name: 'Vintage 1', settings: { contrast: -10, highlights: -10, grain: 20, temperature: 20 } },
+        { name: 'Noir Mate', settings: { saturation: -100, contrast: -10, shadows: 15 } },
+        { name: 'Cross Process', settings: { tint: -30, temperature: 30, saturation: 40 } },
+    ];
+
+    // Efectos Vu (Vintage) - Rayones, Polvo, Fugas de Luz
+    const VU_EFFECTS = [
+        { name: 'None', settings: {} },
+        { name: 'Rayones Ligeros', settings: { contrast: -5, texture: 10 } },
+        { name: 'Polvo Intenso', settings: { blur: 1, grain: 30 } },
+        { name: 'Fuga Roja', settings: { temperature: 15, h_r: 20 } },
+        { name: 'Fuga Azul', settings: { temperature: -15, h_r: -20 } },
+        { name: 'Vibración de Lente', settings: { blur: 5, contrast: -10 } },
+    ];
+
+
+    // --- Funciones de Utilidad (Modals/Toasts) ---
+
+    function showMessage(message, title = 'Alerta', type = 'info') {
+        document.getElementById('modal-title').textContent = title;
+        document.getElementById('modal-message').textContent = message;
+        document.getElementById('message-modal').classList.remove('hidden');
+    }
+
+    function closeMessage() {
+        document.getElementById('message-modal').classList.add('hidden');
+    }
+
+    function showToast(message, type = 'info') {
+        const toast = document.getElementById('toast-notification');
+        toast.textContent = message;
+        toast.className = `fixed bottom-4 right-4 p-3 rounded-md shadow-lg text-white transition-opacity duration-300`;
+        
+        if (type === 'success') {
+            toast.classList.add('bg-emerald-500');
+        } else if (type === 'error') {
+            toast.classList.add('bg-red-600');
+        } else {
+            toast.classList.add('bg-gray-700');
+        }
+
+        toast.classList.remove('hidden');
+        toast.style.opacity = '1';
+        
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            setTimeout(() => toast.classList.add('hidden'), 300);
+        }, 3000);
+    }
+
+    // --- Funciones de Canvas y Procesamiento de Imagen ---
+
+    // Dibuja la imagen original en el canvas y guarda los datos originales de los píxeles
+    function initializeCanvas(image) {
+        // Establecer el tamaño del canvas al tamaño original de la imagen
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(image, 0, 0);
+
+        // Guardar los datos de la imagen original (solo para manipulación de píxeles)
+        originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        
+        // La imagen actual (visual) es el elemento img para filtros CSS
+        currentImage.src = image.src;
+        currentImage.onload = () => {
+            // Reemplazar el canvas con el img para usar filtros CSS
+            canvas.style.display = 'none';
+            const canvasContainer = document.getElementById('canvas-container');
+            const placeholder = document.getElementById('upload-placeholder');
+            
+            // Usar el elemento img para la vista previa y filtros CSS rápidos
+            currentImage.id = 'photo-canvas-preview';
+            currentImage.classList.add('max-w-full', 'max-h-full', 'rounded-lg', 'shadow-2xl');
+            currentImage.style.filter = ''; // Resetear
+            currentImage.style.transform = `rotate(0deg)`; // Resetear
+            
+            if (!document.getElementById('photo-canvas-preview')) {
+                canvasContainer.appendChild(currentImage);
+            }
+
+            placeholder.classList.add('hidden');
+            document.getElementById('save-button').disabled = false;
+            isImageLoaded = true;
+            applyAdjustments();
+        };
+
+        // Resetear la rotación para la UI de rotación
+        rotationAngle = 0;
+        document.getElementById('val-angle').textContent = 0;
+        document.querySelector('input[data-setting="angle"]').value = 0;
+    }
+
+    // Aplica ajustes mediante filtros CSS y lógica de Canvas
+    function applyAdjustments() {
+        if (!isImageLoaded) return;
+
+        // 1. Calcular filtros CSS para ajustes rápidos (Luz, Color)
+        const C = currentSettings;
+
+        // Mapeo simple de ajustes a filtros CSS
+        // Exposición se simula con brightness, Contraste con contrast, Saturación con saturate
+        const exposureScale = C.exposure / 100 * 0.5 + 1; // 0.5 a 1.5
+        const contrastScale = C.contrast / 100 + 1; // 0 a 2
+        const saturationScale = C.saturation / 100 + 1; // 0 a 2
+        const blurScale = C.blur / 100 * 50; // 0 a 50px de blur máximo
+        
+        let cssFilter = `
+            brightness(${exposureScale}) 
+            contrast(${contrastScale}) 
+            saturate(${saturationScale}) 
+            grayscale(${-C.vibrance / 100}) 
+            hue-rotate(${C.tint / 100 * 180}deg) 
+            blur(${blurScale}px)
+        `;
+
+        // Aplicar el filtro CSS
+        const previewElement = document.getElementById('photo-canvas-preview');
+        previewElement.style.filter = cssFilter;
+        
+        // Aplicar rotación
+        rotationAngle = parseInt(C.angle) || 0;
+        previewElement.style.transform = `rotate(${rotationAngle}deg)`;
+
+        // 2. Aplicar ajustes complejos que requieren manipulación de píxeles (Vignette, Grain, HSL)
+        // Se dibuja la imagen actual con los filtros CSS aplicados a un canvas oculto,
+        // luego se manipulan los píxeles para los efectos avanzados.
+
+        // Por simplicidad y rendimiento en este entorno de un solo archivo, 
+        // solo aplicaremos **Vignette** y **Grain** al Canvas,
+        // y lo convertiremos a un DataURL para sobreescribir la fuente del `<img>`
+        
+        if (C.vignette_amount !== 0 || C.grain !== 0) {
+            
+            // Copiar la imagen con los filtros CSS al canvas
+            // Esto es complejo porque el canvas NO tiene acceso a la imagen filtrada por CSS directamente.
+            // Para el DEMO, redibujaremos la imagen original y aplicaremos los efectos de pixel.
+            
+            // 1. Redibujar la imagen original en un canvas temporal
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+            tempCanvas.width = originalImageData.width;
+            tempCanvas.height = originalImageData.height;
+            tempCtx.drawImage(currentImage, 0, 0, tempCanvas.width, tempCanvas.height);
+            
+            let imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+            let data = imageData.data;
+
+            // 2. Manipulación de Píxeles para Efectos Avanzados (Viñeta y Granulado)
+            // Esto es muy costoso!
+
+            // **Viñeta (Vignette)**
+            if (C.vignette_amount !== 0) {
+                const center_x = tempCanvas.width / 2;
+                const center_y = tempCanvas.height / 2;
+                const max_dist = Math.sqrt(center_x * center_x + center_y * center_y);
+                const midpoint = C.vignette_midpoint / 100;
+                const amount = C.vignette_amount / 100 * 2; // -2 a 2
+
+                for (let i = 0; i < data.length; i += 4) {
+                    const x = (i / 4) % tempCanvas.width;
+                    const y = Math.floor(i / 4 / tempCanvas.width);
+
+                    const dist = Math.sqrt(Math.pow(x - center_x, 2) + Math.pow(y - center_y, 2));
+                    let vignette_factor = 1;
+                    
+                    // Cálculo de la viñeta
+                    let ratio = dist / max_dist;
+                    if (ratio > midpoint) {
+                        vignette_factor = 1 - Math.pow((ratio - midpoint) / (1 - midpoint), 2) * amount;
+                        if (vignette_factor < 0.1) vignette_factor = 0.1;
+                    }
+                    
+                    data[i] = data[i] * vignette_factor;     // R
+                    data[i + 1] = data[i + 1] * vignette_factor; // G
+                    data[i + 2] = data[i + 2] * vignette_factor; // B
+                }
+            }
+            
+            // **Granulado (Grain) - Simple ruido aleatorio**
+            if (C.grain > 0) {
+                const grainStrength = C.grain / 200 * 50; // 0 a 25.5
+                for (let i = 0; i < data.length; i += 4) {
+                    const noise = (Math.random() - 0.5) * grainStrength;
+                    data[i] += noise;     // R
+                    data[i + 1] += noise; // G
+                    data[i + 2] += noise; // B
+                }
+            }
+
+            tempCtx.putImageData(imageData, 0, 0);
+
+            // 3. Reemplazar la imagen de vista previa (lento pero necesario para mezclar CSS y pixel)
+            const newSrc = tempCanvas.toDataURL('image/jpeg', 0.9);
+            previewElement.src = newSrc;
+        } else {
+            // Si no hay efectos de pixel, resetear la fuente al original para mantener los filtros CSS puros
+            previewElement.src = currentImage.src; 
+        }
+        
+    }
+
+
+    // --- Manejo de Eventos y UI ---
+
+    // Cambiar de Pestaña
+    document.getElementById('tab-navigation').addEventListener('click', (e) => {
+        if (e.target.classList.contains('tab-button')) {
+            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+            e.target.classList.add('active');
+            
+            const targetTab = e.target.getAttribute('data-tab');
+            document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.add('hidden'));
+            document.getElementById(targetTab).classList.remove('hidden');
+        }
+    });
+
+    // Manejo de Sliders
+    document.getElementById('tab-content').addEventListener('input', (e) => {
+        if (e.target.type === 'range' && e.target.hasAttribute('data-setting')) {
+            const setting = e.target.getAttribute('data-setting');
+            const value = parseFloat(e.target.value);
+            
+            currentSettings[setting] = value;
+            document.getElementById(`val-${setting.replace(/_/g, '-')}`).textContent = value;
+            
+            applyAdjustments();
+        }
+    });
+
+    // Carga de Archivos
+    document.getElementById('upload-button').addEventListener('click', () => {
+        document.getElementById('file-input').click();
+    });
+
+    document.getElementById('file-input').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            // Nota sobre RAW: Los navegadores no pueden procesar RAW. Usaremos JPG/PNG.
+            if (file.name.toLowerCase().endsWith('.raw')) {
+                showMessage('El archivo RAW ha sido seleccionado, pero el navegador solo puede procesar JPG/PNG. Se cargará un placeholder.', 'Advertencia RAW');
+            }
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                img.onload = () => {
+                    initializeCanvas(img);
+                    // Inicializar los ajustes a los valores por defecto
+                    currentSettings = { ...initialSettings }; 
+                    document.querySelectorAll('input[type="range"]').forEach(input => {
+                        input.value = initialSettings[input.getAttribute('data-setting')] || 0;
+                        document.getElementById(`val-${input.getAttribute('data-setting').replace(/_/g, '-')}`).textContent = input.value;
+                    });
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+    });
+
+    // --- Funciones de Guardado ---
+
+    document.getElementById('save-button').addEventListener('click', () => {
+        if (isImageLoaded) {
+            document.getElementById('save-modal').classList.remove('hidden');
+        } else {
+            showMessage('Por favor, carga una imagen primero.', 'Error');
+        }
+    });
+
+    function closeSaveModal() {
+        document.getElementById('save-modal').classList.add('hidden');
+    }
+
+    function saveImage(format) {
+        closeSaveModal();
+        
+        // La calidad original no se pierde *al editar* si guardamos los ajustes
+        // Pero el guardado final siempre será una imagen rasterizada (JPG/PNG)
+        if (format === 'raw-sim') {
+            showMessage('Guardado RAW Simulador: La imagen se guardaría con los ajustes aplicados en un formato no destructivo, pero para descarga se usa PNG.', 'Guardado RAW');
+            format = 'png';
+        }
+
+        // Crear un canvas final con todas las transformaciones de píxeles aplicadas
+        const finalCanvas = document.createElement('canvas');
+        finalCanvas.width = canvas.width;
+        finalCanvas.height = canvas.height;
+        const finalCtx = finalCanvas.getContext('2d');
+        
+        // 1. Redibujar la imagen de vista previa (que tiene los efectos CSS/Pixel)
+        finalCtx.drawImage(document.getElementById('photo-canvas-preview'), 0, 0, finalCanvas.width, finalCanvas.height);
+        
+        // 2. Aplicar rotación y transformación final
+        if (rotationAngle !== 0) {
+             // Este paso es complejo. Simplemente rotamos el canvas y volvemos a dibujar
+             // Para un demo, nos saltamos la complejidad de la rotación perfecta del canvas
+        }
+        
+        const dataURL = finalCanvas.toDataURL(`image/${format}`, 1.0); // Calidad máxima 1.0
+        
+        const a = document.createElement('a');
+        a.href = dataURL;
+        a.download = `SnappyEdit_Export.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        showToast(`Imagen guardada como ${format.toUpperCase()}.`, 'success');
+    }
+
+    // --- Funciones de Presets (Firestore) ---
+
+    // Función que carga la lista en la UI
+    window.updatePresetsList = (presets) => {
+        const ul = document.getElementById('presets-list');
+        ul.innerHTML = ''; // Limpiar lista
+        if (presets.length === 0) {
+            ul.innerHTML = '<li class="text-gray-400 text-sm">No hay presets guardados.</li>';
+            return;
+        }
+
+        presets.forEach(preset => {
+            const li = document.createElement('li');
+            li.className = 'flex justify-between items-center p-2 bg-gray-700 rounded-md hover:bg-gray-600 transition cursor-pointer';
+            li.innerHTML = `
+                <span class="font-medium">${preset.name}</span>
+                <div class="space-x-2">
+                    <button class="text-emerald-400 hover:text-emerald-300" onclick="window.applyPresetFromFirestore('${preset.id}')">
+                        <i class="fa-solid fa-magic"></i> Aplicar
+                    </button>
+                </div>
+            `;
+            ul.appendChild(li);
+        });
+    };
+
+    // Función para guardar el preset actual
+    document.getElementById('save-preset-button').addEventListener('click', () => {
+        const presetName = document.getElementById('preset-name-input').value.trim();
+        if (!isImageLoaded) {
+            showMessage('Carga una imagen antes de guardar un preset.', 'Error');
+            return;
+        }
+        if (presetName === '') {
+            showMessage('Por favor, ingresa un nombre para el preset.', 'Error');
+            return;
+        }
+
+        // Solo guardar los ajustes de Luz, Color y Efectos
+        const settingsToSave = {};
+        Object.keys(initialSettings).forEach(key => {
+            if (key !== 'angle' && key !== 'perspective_h') { // Excluir Transformación
+                settingsToSave[key] = currentSettings[key];
+            }
+        });
+        
+        window.savePresetToFirestore(presetName, settingsToSave);
+        document.getElementById('preset-name-input').value = '';
+    });
+
+    // Función para aplicar un preset (llamada desde Firestore)
+    window.applyPreset = (settings) => {
+        if (!isImageLoaded) {
+            showMessage('Carga una imagen para aplicar el preset.', 'Error');
+            return;
+        }
+
+        // Combinar ajustes (manteniendo Transformación/Filtro/Vu si no están en el preset)
+        currentSettings = { ...currentSettings, ...settings };
+        
+        // Actualizar los sliders de la UI
+        document.querySelectorAll('input[type="range"]').forEach(input => {
+            const setting = input.getAttribute('data-setting');
+            if (currentSettings.hasOwnProperty(setting)) {
+                input.value = currentSettings[setting];
+                document.getElementById(`val-${setting.replace(/_/g, '-')}`).textContent = currentSettings[setting];
+            }
+        });
+
+        // Aplicar filtros/vu si están en el preset
+        if (settings.active_filter) selectFilter(settings.active_filter);
+        if (settings.active_vu) selectVu(settings.active_vu);
+        
+        applyAdjustments();
+    };
+
+
+    // --- Rotación y Transformación ---
+
+    function rotateImage(angle) {
+        if (!isImageLoaded) return;
+        
+        if (angle === 90) {
+            rotationAngle = (rotationAngle + 90) % 360;
+        } else if (angle === -1) { // Espejo Horizontal
+            // Esto es más complejo que solo rotar, requiere transform: scaleX(-1)
+            const previewElement = document.getElementById('photo-canvas-preview');
+            const currentScaleX = previewElement.getAttribute('data-scale-x') === '-1' ? '1' : '-1';
+            previewElement.setAttribute('data-scale-x', currentScaleX);
+            previewElement.style.transform += ` scaleX(${currentScaleX})`;
+            return;
+        } else {
+            // Se maneja con el slider
+        }
+        
+        currentSettings.angle = rotationAngle;
+        document.getElementById('val-angle').textContent = rotationAngle;
+        document.querySelector('input[data-setting="angle"]').value = rotationAngle;
+        
+        applyAdjustments();
+    }
+    
+    // --- Lógica de Filtros Análogos y Vu ---
+
+    // Generar la UI de filtros y efectos Vu
+    function generateFilterUI() {
+        const filterGrid = document.getElementById('analog-filters');
+        const vuGrid = document.getElementById('vu-effects');
+
+        // Filtros Análogos
+        ANALOG_FILTERS.forEach(f => {
+            const card = document.createElement('div');
+            card.className = 'filter-card';
+            card.dataset.name = f.name;
+            card.onclick = () => selectFilter(f.name);
+            card.innerHTML = `<div class="filter-preview" style="${f.settings.saturation ? `filter: saturate(${f.settings.saturation/100 + 1});` : ''}"></div><span class="text-xs">${f.name}</span>`;
+            filterGrid.appendChild(card);
+        });
+
+        // Efectos Vu
+        VU_EFFECTS.forEach(v => {
+            const card = document.createElement('div');
+            card.className = 'vu-card';
+            card.dataset.name = v.name;
+            card.onclick = () => selectVu(v.name);
+            card.innerHTML = `<div class="filter-preview" style="background-image: url('https://placehold.co/100x60/374151/ffffff?text=${v.name.split(' ')[0]}')"></div><span class="text-xs">${v.name}</span>`;
+            vuGrid.appendChild(card);
+        });
+    }
+
+    function selectFilter(filterName) {
+        document.querySelectorAll('.filter-card').forEach(card => {
+            card.classList.toggle('selected', card.dataset.name === filterName);
+        });
+
+        currentSettings.active_filter = filterName;
+        const filter = ANALOG_FILTERS.find(f => f.name === filterName);
+        
+        // Aplicar ajustes del filtro al estado principal, pero sin sobrescribir transformaciones
+        Object.keys(initialSettings).forEach(key => {
+            if (filter.settings.hasOwnProperty(key)) {
+                currentSettings[key] = filter.settings[key];
+            } else if (key !== 'angle' && key !== 'perspective_h') {
+                currentSettings[key] = initialSettings[key]; // Resetear los no afectados
+            }
+        });
+
+        // Actualizar sliders (excepto Transformación)
+        document.querySelectorAll('input[type="range"]').forEach(input => {
+            const setting = input.getAttribute('data-setting');
+            if (input.closest('.tab-pane').id !== 'transform' && currentSettings.hasOwnProperty(setting)) {
+                input.value = currentSettings[setting];
+                document.getElementById(`val-${setting.replace(/_/g, '-')}`).textContent = currentSettings[setting];
+            }
+        });
+
+        applyAdjustments();
+    }
+
+    function selectVu(vuName) {
+        document.querySelectorAll('.vu-card').forEach(card => {
+            card.classList.toggle('selected', card.dataset.name === vuName);
+        });
+
+        currentSettings.active_vu = vuName;
+        const vu = VU_EFFECTS.find(v => v.name === vuName);
+
+        // Los efectos Vu se aplican *encima* del filtro, por lo que solo modificamos sus propios parámetros
+        Object.keys(vu.settings).forEach(key => {
+            currentSettings[key] = (currentSettings[key] || 0) + vu.settings[key];
+        });
+
+        // Actualizar sliders (aunque no es necesario si solo son efectos)
+        document.querySelectorAll('input[type="range"]').forEach(input => {
+            const setting = input.getAttribute('data-setting');
+            if (vu.settings.hasOwnProperty(setting)) {
+                 // Solo actualiza el valor visual, la lógica se maneja en applyAdjustments
+            }
+        });
+
+        applyAdjustments();
+    }
+
+    // --- Inicialización ---
+
+    // Generar la UI de filtros al cargar
+    generateFilterUI();
+
+    // Inicializar los ajustes
+    currentSettings = { ...initialSettings };
+
+
+    // Host Suggestion (Conversational part)
+    document.addEventListener('DOMContentLoaded', () => {
+        // Inicializar el script de Firebase después de que el DOM esté listo
+        if (window.loadPresetsFromFirestore) {
+            window.loadPresetsFromFirestore();
+        }
+    });
+
+</script>
+</body>
+</html>
